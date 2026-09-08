@@ -87,6 +87,8 @@ import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_CMD_REG_C
 import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_CMD_START_SCHED_SCAN;
 import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_CMD_STOP_SCHED_SCAN;
 import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_CMD_TRIGGER_SCAN;
+import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_FEATURE_SCAN_RANDOM_MAC_ADDR;
+import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_FEATURE_SCHED_SCAN_RANDOM_MAC_ADDR;
 import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_FREQUENCY_ATTR_FREQ;
 import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_PROTOCOL_FEATURE_SPLIT_WIPHY_DUMP;
 import static com.android.server.wifi.nl80211.NetlinkConstants.NL80211_REGDOM_TYPE_COUNTRY;
@@ -431,9 +433,13 @@ public class Nl80211UtilsTest {
     }
 
     private GenericNetlinkMsg createBasicWiphyInfoMsg() {
+        return createBasicWiphyInfoMsg(0);
+    }
+
+    private GenericNetlinkMsg createBasicWiphyInfoMsg(int featureFlags) {
         GenericNetlinkMsg msg = new GenericNetlinkMsg(NL80211_CMD_NEW_WIPHY, (short) 0,
                 (short) 0, 0);
-        msg.addAttribute(new StructNlAttr(NL80211_ATTR_FEATURE_FLAGS, 0));
+        msg.addAttribute(new StructNlAttr(NL80211_ATTR_FEATURE_FLAGS, featureFlags));
         msg.addAttribute(new StructNlAttr(NL80211_ATTR_MAX_NUM_SCAN_SSIDS, (byte) 16));
         msg.addAttribute(
                 new StructNlAttr(NL80211_ATTR_MAX_NUM_SCHED_SCAN_SSIDS, (byte) 16));
@@ -578,6 +584,31 @@ public class Nl80211UtilsTest {
         assertTrue(info.bandInfo.is80211nSupported);
         assertTrue(info.bandInfo.is80211acSupported);
         assertEquals(16, info.scanCapabilities.maxNumScanSsids);
+    }
+
+    private void assertRandomMacCapabilities(int featureFlags, boolean oneShot, boolean scheduled) {
+        GenericNetlinkMsg msg = createBasicWiphyInfoMsg(featureFlags);
+        msg.addAttribute(createWiphyBandsAttribute());
+
+        Nl80211Utils.WiphyInfo info = mNl80211Utils.parseWiphyInfo(List.of(msg));
+
+        assertNotNull(info);
+        assertEquals(oneShot, info.wiphyFeatures.supportsRandomMacOneShotScan);
+        assertEquals(scheduled, info.wiphyFeatures.supportsRandomMacSchedScan);
+    }
+
+    @Test
+    public void testParseWiphyInfo_randomMacFeatureBitIndices() {
+        assertRandomMacCapabilities(0, false, false);
+        assertRandomMacCapabilities(0x1, false, false);
+        assertRandomMacCapabilities(0x8, false, false);
+        assertRandomMacCapabilities(1 << NL80211_FEATURE_SCAN_RANDOM_MAC_ADDR, true, false);
+        assertRandomMacCapabilities(1 << NL80211_FEATURE_SCHED_SCAN_RANDOM_MAC_ADDR, false, true);
+        assertRandomMacCapabilities(
+                (1 << NL80211_FEATURE_SCAN_RANDOM_MAC_ADDR)
+                        | (1 << NL80211_FEATURE_SCHED_SCAN_RANDOM_MAC_ADDR),
+                true, true);
+        assertRandomMacCapabilities(Integer.MIN_VALUE, false, false);
     }
 
     @Test
